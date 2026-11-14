@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArtisanConnect Geo Intelligence | Prototype</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">ARTISANCONNECT <span>GEO INTELLIGENCE</span></a>
+    <span class="badge">PROTOTYPE ISOLE · NON OPERATIONNEL</span>
+  </header>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">EARTH SYSTEM TREND DETECTIVE</p>
+      <h1>Comprendre ce qui change.<br><span>Eclairer l'action locale.</span></h1>
+      <p>Explorer une tendance environnementale dans le temps, puis rapprocher les observations des competences locales. Aucun risque ni besoin futur n'est predit.</p>
+    </section>
+    <div id="provenance" class="notice" role="status"></div>
+    <section class="panel controls" aria-label="Source et filtres">
+      <div>
+        <h2>01 / Donnees et territoire</h2>
+        <p class="muted">Comparer un scenario fictif, charger une serie NASA POWER ou importer un CSV local.</p>
+        <div class="actions data-actions">
+          <button id="nasa-load" type="button">Charger MERRA-2 pour Yaounde</button>
+          <button id="demo-reset" type="button" class="secondary">Revenir au scenario fictif</button>
+        </div>
+        <p class="muted small">Le chargement NASA interroge un point de grille a Yaounde. Il ne distingue pas les quartiers et remplace les donnees actuellement affichees.</p>
+        <label for="zone">Zone d'observation</label>
+        <select id="zone"></select>
+        <div class="period">
+          <div><label for="start">Annee de debut</label><select id="start"></select></div>
+          <div><label for="end">Annee de fin</label><select id="end"></select></div>
+        </div>
+      </div>
+      <form id="import-form">
+        <h3>Importer une serie CSV</h3>
+        <label for="source">Source et version du jeu de donnees</label>
+        <input id="source" maxlength="200" placeholder="Ex. organisme, produit, version, traitement">
+        <label for="indicator">Nom de l'indicateur</label>
+        <input id="indicator" maxlength="100" placeholder="Ex. temperature de surface moyenne annuelle">
+        <label for="csv">Fichier CSV (1 Mo maximum)</label>
+        <input id="csv" type="file" accept=".csv,text/csv">
+        <p class="muted small">Colonnes : zone,year,value,latitude,longitude,unit. Virgules comme separateurs, points decimaux. Minimum 3 annees par zone.</p>
+        <div class="actions"><button type="submit">Importer le CSV</button><button id="template" type="button" class="secondary">CSV de demonstration</button></div>
+      </form>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+    <section aria-label="Indicateurs descriptifs" class="metrics">
+      <article><span>TENDANCE LINEAIRE</span><strong id="slope">—</strong><small>Regression descriptive, par decennie</small></article>
+      <article><span>ECART PREMIERE / DERNIERE ANNEE</span><strong id="change">—</strong><small>Difference observee, pas une prediction</small></article>
+      <article><span>COUVERTURE TEMPORELLE</span><strong id="coverage">—</strong><small id="missing"></small></article>
+      <article><span>SIGNIFICATIVITE STATISTIQUE</span><strong class="unverified">Non evaluee</strong><small>Requise par le defi; aucune p-value inventee</small></article>
+    </section>
+    <section class="panel caution-panel" aria-live="polite">
+      <div class="section-title"><h2>02 / Interpretation prudente</h2><span class="badge">MODE DESCRIPTIF</span></div>
+      <p id="method-prudence" class="muted">Le prototype conserve une lecture descriptive et n'affiche pas de p-value ni de conclusion de significativite statistique.</p>
+      <ul class="caution-list">
+        <li>La pente observable ne prouve ni un risque local ni une causalite.</li>
+        <li>Les series de grille (ex. NASA POWER / MERRA-2) ne remplacent pas une mesure in situ au quartier.</li>
+        <li>L'analyse reste prudente jusqu'a une validation statistique plus rigoureuse.</li>
+      </ul>
+    </section>
+    <section class="panel">
+      <div class="section-title"><h2>03 / Comparer les tendances par zone</h2><span id="comparison-period" class="badge"></span></div>
+      <p class="muted">Comparaison descriptive sur la meme periode. Une tendance n'etablit ni un risque local ni une cause. Choisir une zone pour afficher sa serie.</p>
+      <div class="table-wrap">
+        <table>
+          <caption class="visually-hidden">Tendances descriptives de toutes les zones pour la periode choisie</caption>
+          <thead><tr><th scope="col">Zone</th><th scope="col">Tendance lineaire</th><th scope="col">Ecart observe</th><th scope="col">Observations</th><th scope="col">Annees absentes</th><th scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+          <tbody id="comparison"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="visuals">
+      <article class="panel">
+        <div class="section-title"><h2>04 / Ou observe-t-on le changement ?</h2><span class="badge">SCHEMA</span></div>
+        <p class="muted">Points de serie, sans frontieres administratives ni zones de risque. Cliquer sur une zone pour l'explorer.</p>
+        <svg id="map" viewBox="0 0 600 320" role="group" aria-label="Schema des zones d'observation"></svg>
+        <p class="small muted">Orange : tendance positive · Bleu : negative · Gris : stable / periode insuffisante. Projection locale simplifiee, pas une carte satellite.</p>
+      </article>
+      <article class="panel">
+        <h2>05 / Comment la variable evolue-t-elle ?</h2>
+        <p id="chart-caption" class="muted"></p>
+        <svg id="chart" viewBox="0 0 600 320" role="img" aria-label="Serie annuelle et regression descriptive"></svg>
+        <p class="small muted">Points : observations · Ligne pointillee : regression lineaire. Les annees absentes ne sont pas interpolees.</p>
+      </article>
+    </section>
+    <section class="panel">
+      <h2>06 / Competences locales : une piste d'action, pas une conclusion scientifique</h2>
+      <p class="muted">Un signal environnemental ne suffit pas a etablir un risque, une cause ou un besoin en main-d'oeuvre. Les liens ci-dessous sont des hypotheses a discuter avec les collectivites.</p>
+      <div id="skills" class="skills"></div>
+      <p class="small muted">Aucun compte artisan consulte. Aucun positionnement individuel. Aucun effectif reel. Pour une autre variable importee, aucune correspondance automatique avec les metiers.</p>
+    </section>
+    <section class="panel resources" aria-labelledby="resources-title">
+      <h2 id="resources-title">07 / Ressources pour les donnees et la methode</h2>
+      <p class="muted">Outils, jeux de donnees et references pour preparer une analyse. Leur presence ici ne signifie pas qu'ils sont connectes au prototype ni que leurs donnees ont ete validees pour Yaounde.</p>
+      <h3>Explorer et obtenir des donnees</h3>
+      <ul class="resource-list">
+        <li><a href="https://giovanni.gsfc.nasa.gov/giovanni/" target="_blank" rel="noreferrer">NASA Giovanni</a><span>Visualiser des variables geophysiques et creer des series temporelles.</span></li>
+        <li><a href="https://disc.gsfc.nasa.gov/hydrology-tools" target="_blank" rel="noreferrer">NASA Hydrology Time Series / Data Rods</a><span>Explorer des series de donnees hydrologiques par lieu.</span></li>
+        <li><a href="https://appeears.earthdatacloud.nasa.gov/" target="_blank" rel="noreferrer">NASA AppEEARS</a><span>Extraire et transformer des donnees geospatiales de plusieurs archives federales.</span></li>
+        <li><a href="https://www.ncei.noaa.gov/cdo-web/" target="_blank" rel="noreferrer">NOAA Climate Data Online (CDO)</a><span>Consulter des archives historiques de meteorologie et de climat.</span></li>
+        <li><a href="https://www.asc-csa.gc.ca/eng/satellites/radarsat/access-to-data/" target="_blank" rel="noreferrer">Mission RADARSAT Constellation (RCM) - acces aux donnees</a><span>Informations sur les donnees radar et leurs conditions d'acces.</span></li>
+        <li><a href="https://geo.ca/" target="_blank" rel="noreferrer">GEO.ca</a><span>Portail de donnees geospatiales ouvertes du Canada.</span></li>
+        <li><a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noreferrer">Mission SWOT</a><span>Mesures des eaux de surface et de leur evolution.</span></li>
+      </ul>
+      <h3>Analyser les tendances et leur contexte</h3>
+      <ul class="resource-list">
+        <li><a href="https://climexp.knmi.nl/" target="_blank" rel="noreferrer">KNMI Climate Explorer</a><span>Outil d'exploration, d'analyse et de visualisation de donnees climatiques.</span></li>
+        <li><a href="https://ntrs.nasa.gov/search.jsp?R=20090042747" target="_blank" rel="noreferrer">Time-Series Analysis of Remotely-Sensed SeaWiFS Chlorophyll in River-Influenced Coastal Regions</a><span>Etude de series temporelles de chlorophylle en zones cotieres influencees par les rivieres.</span></li>
+        <li><span class="resource-name">Statistical test methods to detect trends in time series data</span><span>Reference sur les tests de tendance; l'adresse n'etait pas incluse dans le document fourni.</span></li>
+        <li><span class="resource-name">A Comprehensive Guide to Statistical Significance</span><span>Guide sur la significativite; l'adresse n'etait pas incluse dans le document fourni.</span></li>
+      </ul>
+      <h3>Suivre les ecosystemes et travailler avec le radar</h3>
+      <ul class="resource-list">
+        <li><a href="https://www.asc-csa.gc.ca/eng/satellites/everyday-lives/monitoring-and-protecting-our-ecosystems-from-space.asp" target="_blank" rel="noreferrer">Surveiller et proteger les ecosystemes depuis l'espace (ASC)</a><span>Exemples d'utilisation de donnees satellitaires pour le suivi des ecosystemes.</span></li>
+        <li><a href="https://github.com/asc-csa/Synthetic_Aperture_Radar_Tutorial/blob/main/Option%202%20-%20Python/BC%20Wildfire%20raster%20plot.ipynb" target="_blank" rel="noreferrer">Tutoriel Python SAR de l'Agence spatiale canadienne</a><span>Exemple pratique de traitement et de visualisation de donnees radar.</span></li>
+      </ul>
+      <p class="small muted">Verifiez la provenance, la resolution, les licences et les conditions d'utilisation de chaque jeu. NASA ne cautionne pas les sites non gouvernementaux.</p>
+    </section>
+    <details class="panel">
+      <summary>Methode, limites et preparation du concours</summary>
+      <ul>
+        <li>Regression lineaire par moindres carres sur les annees effectivement observees. La pente est multipliee par dix pour l'affichage par decennie.</li>
+        <li>Les fichiers doivent contenir des valeurs annuelles comparables : meme variable, unite, methode d'agregation et emplacement pour chaque serie.</li>
+        <li>Pas de test de significativite : la saisonnalite, l'autocorrelation, la qualite des mesures et les comparaisons multiples doivent etre examines avant toute inference.</li>
+        <li>Les coordonnees sont declarees dans le CSV, non verifiees ; elles ne representent ni des artisans ni des limites de quartier.</li>
+        <li>Aucune donnee NASA n'est embarquee : le bouton charge T2M annuel a la demande via <a href="https://power.larc.nasa.gov/docs/services/api/temporal/monthly/" target="_blank" rel="noreferrer">NASA POWER Monthly and Annual API</a>, source MERRA-2. Les donnees de ce prototype ne remplacent pas la selection et la validation du jeu recommande pour le defi.</li>
+        <li>Le chargement NASA interroge un seul point. Il ne permet pas de comparer des quartiers de Yaounde ; la grille native du produit doit etre prise en compte dans toute interpretation spatiale.</li>
+        <li>La significativite n'est pas encore calculee. Une methode valide pour des series climatiques doit tenir compte de l'autocorrelation et etre documentee avant toute conclusion.</li>
+        <li>Prototype preparatoire cree le 7 novembre 2026. Declarer le travail preexistant et verifier le reglement avant toute soumission au hackathon.</li>
+      </ul>
+      <p><a href="https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/" target="_blank" rel="noreferrer">Consulter le defi Earth System Trend Detective</a></p>
+    </details>
+  </main>
+  <footer>ARTISANCONNECT GEO INTELLIGENCE · Prototype local independant · Aucun lien avec la production</footer>
+</body>
+</html>
