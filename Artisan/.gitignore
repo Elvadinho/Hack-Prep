@@ -2,5 +2,8 @@
 .env
 __pycache__/
 *.pyc
-data/cache/
+data/cache/*
+!data/cache/power_*.json
+!data/cache/extra_*.json
+!data/cache/validation.json
 .pytest_cache/
