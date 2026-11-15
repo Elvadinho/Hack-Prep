@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "artisan",
+      "runtimeExecutable": "C:\\Users\\Elvadinho\\Documents\\GitHub\\Hack Prep\\Artisan\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "backend.main:app", "--port", "8000"],
+      "cwd": "C:\\Users\\Elvadinho\\Documents\\GitHub\\Hack Prep\\Artisan",
+      "port": 8000
+    }
+  ]
+}

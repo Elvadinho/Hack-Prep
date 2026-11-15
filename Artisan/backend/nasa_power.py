@@ -1,6 +1,6 @@
 """Client for the NASA POWER daily point API, with a disk cache.
 
-One request per region returns 35 years of daily data for 4 variables.
+One request per region returns 45 years of daily data for 5 variables.
 The JSON is cached in data/cache/ so we only call NASA once per region.
 """
 import json
@@ -15,7 +15,9 @@ FILL_VALUE = -999.0  # NASA POWER marks missing data with -999
 
 
 def _cache_path(region: Region):
-    return config.CACHE_DIR / f"power_{region.id}_{config.START_YEAR}_{config.END_YEAR}.json"
+    # the variable list is part of the name, so adding a variable triggers a fresh download
+    variables = "-".join(config.POWER_PARAMETERS)
+    return config.CACHE_DIR / f"power_{region.id}_{config.START_YEAR}_{config.END_YEAR}_{variables}.json"
 
 
 def fetch_power_json(region: Region, refresh: bool = False) -> dict:

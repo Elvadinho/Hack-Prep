@@ -73,3 +73,30 @@ def test_anomaly_z_score():
     result = anomaly(16.0, baseline)
     assert result["z_score"] == pytest.approx(2.0)
     assert result["percentile"] == pytest.approx(100.0)
+
+def stationary_ar1(rng, n, rho):
+    """Noise with memory, started in its steady state (the old helper started calm at 0)."""
+    x = np.empty(n)
+    x[0] = rng.normal(0, 1 / np.sqrt(1 - rho**2))
+    for i in range(1, n):
+        x[i] = rho * x[i - 1] + rng.normal()
+    return x
+
+
+def test_false_alarm_rate_on_45_years_matches_what_the_app_claims():
+    """The figure shown on the Reliability page: about 5% for memory up to 0.6."""
+    years = range(1981, 2026)
+    rng = np.random.default_rng(7)
+    for rho in (0.0, 0.3, 0.6):
+        alarms = sum(trend_test(pd.Series(stationary_ar1(rng, 45, rho), index=years))["significant"] for _ in range(300))
+        assert alarms / 300 <= 0.09, f"too many false alarms at rho={rho}"
+
+
+def test_flat_recent_trend_is_not_a_reversal():
+    """A trend that stops after 2000 is 'consistent', not 'goes the other way'."""
+    from backend.stats import robustness
+
+    years = list(range(1981, 2026))
+    flat_since_2000 = pd.Series([0.1 * (y - 1981) if y < 2000 else 1.9 for y in years], index=years)
+    rising = {"p_value": 0.001, "significant": True, "slope_per_year": 0.05}
+    assert robustness(flat_since_2000, rising)["status"] == "consistent"

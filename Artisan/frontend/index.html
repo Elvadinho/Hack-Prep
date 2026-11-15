@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArtisanConnect Geo Intelligence · Cameroun</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=6">
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
+  <script src="i18n.js?v=6" defer></script>
+  <script src="cameroon.js?v=6" defer></script>
+  <script src="core.js?v=6" defer></script>
+  <script src="page-home.js?v=6" defer></script>
+  <script src="page-report.js?v=6" defer></script>
+  <script src="page-compare.js?v=6" defer></script>
+  <script src="page-forecast.js?v=6" defer></script>
+  <script src="page-discover.js?v=6" defer></script>
+  <script src="page-validation.js?v=6" defer></script>
+  <script src="page-ai.js?v=6" defer></script>
+  <script src="main.js?v=6" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip"></a>
+  <header class="topbar">
+    <a class="brand" href="#/">ARTISANCONNECT <span data-i18n="brand_sub"></span></a>
+    <nav class="nav" aria-label="Pages">
+      <a href="#/" data-page-link="home" data-i18n="nav_home"></a>
+      <a href="#/synthese" data-page-link="report" data-i18n="nav_report"></a>
+      <a href="#/comparer" data-page-link="compare" data-i18n="nav_compare"></a>
+      <a href="#/previsions" data-page-link="forecast" data-i18n="nav_forecast"></a>
+      <a href="#/decouvertes" data-page-link="discover" data-i18n="nav_discover"></a>
+      <a href="#/fiabilite" data-page-link="validation" data-i18n="nav_validation"></a>
+      <a href="#/assistant" data-page-link="ai" data-i18n="nav_ai"></a>
+    </nav>
+    <button id="lang-toggle" class="lang" type="button">EN</button>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <!-- HOME -->
+    <section class="page" data-page="home">
+      <header class="page-head">
+        <p class="eyebrow" data-i18n="data_badge"></p>
+        <h1 data-i18n="home_title"></h1>
+        <p class="sub" data-i18n="home_sub"></p>
+      </header>
+      <div class="home-grid">
+        <article class="card">
+          <div class="card-head"><h2 data-i18n="home_map"></h2><div class="seg" id="home-hazard"></div></div>
+          <div class="map-box"><canvas id="map" role="img" aria-labelledby="map-desc"></canvas><p id="map-desc" class="sr-only"></p><div id="map-tip" class="map-tip" hidden></div></div>
+          <div class="legend" id="legend"></div>
+          <p class="note-small" data-i18n="map_note"></p>
+        </article>
+        <aside class="stack">
+          <article class="card">
+            <h2 data-i18n="home_keys"></h2>
+            <div class="keys" id="home-keys"></div>
+          </article>
+          <article class="card">
+            <h2 data-i18n="home_top"></h2>
+            <ol class="ranking" id="home-top"></ol>
+            <details class="how" id="home-how" open><summary data-i18n="how_title"></summary><div id="home-how-body"></div></details>
+          </article>
+          <div class="actions">
+            <a class="btn" href="#/synthese" data-i18n="home_go_report"></a>
+            <a class="btn btn-ghost" href="#/comparer" data-i18n="home_go_compare"></a>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- SYNTHESIS REPORT -->
+    <section class="page" data-page="report" hidden>
+      <header class="page-head">
+        <h1 data-i18n="rep_title"></h1>
+        <p class="sub" data-i18n="rep_sub"></p>
+      </header>
+      <div class="toolbar">
+        <label><span data-i18n="place"></span><select id="rep-place"></select></label>
+        <label><span data-i18n="from"></span><select id="rep-start" class="year"></select></label>
+        <label><span data-i18n="to"></span><select id="rep-end" class="year"></select></label>
+        <div class="toolbar-end">
+          <button id="rep-ai" class="btn" type="button" data-i18n="rep_ai"></button>
+          <button id="rep-print" class="btn btn-ghost" type="button" data-i18n="rep_print"></button>
+        </div>
+      </div>
+      <div id="rep-body"></div>
+      <article id="rep-ai-out" class="card ai-output" aria-live="polite" tabindex="0" hidden></article>
+    </section>
+
+    <!-- COMPARE -->
+    <section class="page" data-page="compare" hidden>
+      <header class="page-head">
+        <h1 data-i18n="cmp_title"></h1>
+        <p class="sub" data-i18n="cmp_sub"></p>
+      </header>
+      <div class="toolbar">
+        <div class="places" id="cmp-places"></div>
+        <label><span data-i18n="from"></span><select id="cmp-start" class="year"></select></label>
+        <label><span data-i18n="to"></span><select id="cmp-end" class="year"></select></label>
+      </div>
+      <div class="seg seg-wide" id="cmp-variable"></div>
+      <article class="card">
+        <div class="card-head"><h2 id="cmp-chart-title"></h2><button id="cmp-play" class="btn btn-ghost btn-small" type="button"></button></div>
+        <div id="cmp-chart" class="chart chart-tall"></div>
+        <p class="note-small" data-i18n="cmp_smooth"></p>
+      </article>
+      <div class="cmp-cards" id="cmp-cards"></div>
+      <p class="note-small" data-i18n="cmp_note"></p>
+    </section>
+
+    <!-- FORECAST + ADVICE -->
+    <section class="page" data-page="forecast" hidden>
+      <header class="page-head">
+        <h1 data-i18n="fc_title"></h1>
+        <p class="sub" data-i18n="fc_sub"></p>
+      </header>
+      <div class="toolbar">
+        <label><span data-i18n="region"></span><select id="fc-region"></select></label>
+        <div class="field"><span data-i18n="hazard"></span><div class="seg" id="fc-hazard"></div></div>
+        <div class="field"><span data-i18n="horizon"></span><div class="seg" id="fc-horizon"></div></div>
+      </div>
+      <div class="fc-grid">
+        <article class="card">
+          <h2 data-i18n="fc_chart"></h2>
+          <div id="fc-chart" class="chart"></div>
+          <p class="note-small" id="fc-method"></p>
+        </article>
+        <aside class="stack" id="fc-numbers"></aside>
+      </div>
+      <article class="card">
+        <div class="card-head"><h2 data-i18n="fc_todo"></h2><span class="priority" id="fc-priority"></span></div>
+        <p class="timing" id="fc-timing"></p>
+        <div class="todo-grid">
+          <div><ol class="actions-list" id="fc-actions"></ol><ul class="facts" id="fc-facts"></ul></div>
+          <div><h3 data-i18n="fc_artisans"></h3><div class="artisans" id="fc-artisans"></div><p class="note-small" data-i18n="fc_demo"></p></div>
+        </div>
+      </article>
+    </section>
+
+    <!-- DISCOVERIES -->
+    <section class="page" data-page="discover" hidden>
+      <header class="page-head">
+        <h1 data-i18n="dc_title"></h1>
+        <p class="sub" id="dc-sub"></p>
+      </header>
+      <div class="seg seg-wide" id="dc-filter"></div>
+      <div class="disc-grid" id="dc-grid"></div>
+    </section>
+
+    <!-- RELIABILITY: the proof that the analysis is right -->
+    <section class="page" data-page="validation" hidden>
+      <header class="page-head">
+        <h1 data-i18n="va_title"></h1>
+        <p class="sub" data-i18n="va_sub"></p>
+      </header>
+      <div id="va-body"></div>
+    </section>
+
+    <!-- AI ASSISTANT -->
+    <section class="page" data-page="ai" hidden>
+      <header class="page-head">
+        <h1 data-i18n="ai_title"></h1>
+        <p class="sub" data-i18n="ai_sub"></p>
+      </header>
+      <div class="ai-grid">
+        <article class="card">
+          <div class="card-head"><h2 data-i18n="ai_summary"></h2><button id="ai-summary" class="btn btn-small" type="button" data-i18n="ai_summary_btn"></button></div>
+          <div id="ai-summary-out" class="ai-output" aria-live="polite" tabindex="0"></div>
+        </article>
+        <article class="card">
+          <h2 data-i18n="ai_chat"></h2>
+          <div class="toolbar toolbar-flat">
+            <label><span data-i18n="region"></span><select id="ai-region"></select></label>
+            <label><span data-i18n="hazard"></span><select id="ai-hazard"></select></label>
+          </div>
+          <div class="suggest" id="ai-suggest"></div>
+          <div class="chat-log" id="ai-log" role="log" aria-live="polite" tabindex="0"></div>
+          <form class="chat-form" id="ai-form">
+            <input id="ai-input" maxlength="500" autocomplete="off" required aria-label="Question">
+            <button class="btn" type="submit" data-i18n="ai_send"></button>
+          </form>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer"><p data-i18n="footer"></p></footer>
+</body>
+</html>

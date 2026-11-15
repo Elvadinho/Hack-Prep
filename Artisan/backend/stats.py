@@ -3,7 +3,8 @@
 - Sen's slope        -> HOW MUCH (robust to outliers), reported per decade
 - Mann-Kendall test   -> IS IT SIGNIFICANT, with an effective-sample-size
   correction for autocorrelation (climate years are not independent).
-  Validated in tests: ~5% false alarms even with strong year-to-year memory.
+  Measured on 45-year simulations (backend/validation.py): 5-6% false alarms for memory
+  up to 0.6, about 10% for very strong memory (0.8).
 - Anomaly z-score    -> IS IT UNUSUAL NOW compared with the 1991-2020 normal
 """
 import numpy as np
@@ -46,7 +47,7 @@ def trend_test(series: pd.Series) -> dict:
     rho = lag1_autocorrelation(values, result.intercept, slope)
     inflation = (1 + rho) / (1 - rho)  # variance inflation for AR(1) memory
     z = float(result.z) / np.sqrt(inflation)
-    p_value = float(2 * (1 - norm.cdf(abs(z))))
+    p_value = float(2 * norm.sf(abs(z)))  # sf keeps precision for tiny p-values
     if p_value < 0.05:
         direction = "increasing" if slope > 0 else "decreasing"
     else:
@@ -83,6 +84,37 @@ def lag1_autocorrelation(values: np.ndarray, intercept: float, slope: float) -> 
     r1 = float(np.sum(residuals[1:] * residuals[:-1])) / denominator
     r1 = r1 + (1 + 4 * r1) / n
     return min(max(r1, 0.0), 0.95)
+
+
+def robustness(series: pd.Series, trend: dict, start: int | None = None) -> dict:
+    """Does the trend survive if we only look at the recent part of the record?
+
+    Protects against trends created by one jump in the data (e.g. a change in
+    the satellites feeding the MERRA-2 reanalysis around 1998).
+      robust      -> same direction AND still p < 0.10 after `start`
+      consistent  -> same direction (or flat) since `start`, but not significant on its own
+      not_robust  -> recent trend goes the other way: be careful
+      no_trend    -> no trend signal at all (p >= 0.10), nothing to check
+
+    Weak signals (0.05 <= p < 0.10) are checked too: the risk score gives them
+    points, so they must pass the same test as significant trends.
+    """
+    from backend import config  # local import keeps stats.py usable on its own
+
+    start = start or config.ROBUST_FROM
+    recent = series.loc[start:]
+    if len(recent.dropna()) < MIN_YEARS:
+        return {"status": "consistent", "from_year": start, "trend": None}
+    recent_trend = trend_test(recent)
+    if trend["p_value"] >= 0.10:
+        status = "no_trend"
+    elif recent_trend["slope_per_year"] * trend["slope_per_year"] < 0:  # truly the other way; flat is not a reversal
+        status = "not_robust"
+    elif recent_trend["p_value"] < 0.10:
+        status = "robust"
+    else:
+        status = "consistent"
+    return {"status": status, "from_year": start, "trend": recent_trend}
 
 
 def trend_line(series: pd.Series, trend: dict, project_to: int | None = None) -> dict:
