@@ -1,6 +1,6 @@
 // SYNTHESIS: the climate brief for one place and period, written for non-specialists first.
 App.pages.report = {
-  place: "centre", start: 1981, end: 2025, data: null, key: "",
+  place: "centre", start: 1981, end: 2025, data: null, key: "", simple: false,
 
   init() {
     $("rep-place").addEventListener("change", (e) => { this.place = e.target.value; this.load(); });
@@ -8,10 +8,18 @@ App.pages.report = {
     $("rep-end").addEventListener("change", (e) => { this.end = Number(e.target.value); this.load(); });
     $("rep-ai").addEventListener("click", () => this.writeWithAI());
     $("rep-print").addEventListener("click", () => window.print());
+    $("rep-csv").addEventListener("click", () => this.downloadData());
+    $("rep-link").addEventListener("click", (e) => copyLink(e.currentTarget));
   },
 
   show(params) {
     if (params.place && App.state.places.some((p) => p.id === params.place)) this.place = params.place;
+    this.start = yearParam(params.start, this.start);
+    this.end = yearParam(params.end, this.end);
+    if ("view" in params || params.place) {  // a new link always re-renders in the requested view
+      this.simple = params.view === "simple";
+      this.key = "";
+    }
     this.renderControls();
     this.load();
   },
@@ -24,6 +32,7 @@ App.pages.report = {
   },
 
   async load() {
+    setLink("synthese", { place: this.place, start: this.start, end: this.end, view: this.simple ? "simple" : "" });
     if (this.end - this.start < 9) { $("rep-body").replaceChildren(errorEl(new Error(t("years_min")))); return; }
     const key = `${this.place}|${this.start}|${this.end}|${App.state.lang}`;
     if (key === this.key) return;
@@ -59,12 +68,23 @@ App.pages.report = {
       el("p", { class: "rep-meta" }, t("rep_meta", { n: r.n_years, start: r.period[0], end: r.period[1], records: r.n_records, missing: r.missing, lat: fmt(r.place.lat, 3), lon: fmt(r.place.lon, 3) })),
       el("p", { class: "rep-intro" }, r.overview));
 
+    // the 3 messages to remember (also the head of the printed, dated bulletin)
+    const locale = App.state.lang === "fr" ? "fr-FR" : "en-GB";
+    const month = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date());
+    const today = new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(new Date());
+    const keyCard = el("article", { class: "card key-card" },
+      el("div", { class: "bulletin-head" },
+        el("p", { class: "bulletin-title" }, t("bulletin_title", { month })),
+        el("p", { class: "bulletin-meta" }, `${r.place.name} · ${r.place.region_name} · ${r.period[0]}–${r.period[1]} · ${t("bulletin_issued", { date: today })}`)),
+      el("h2", {}, t("key_title")),
+      el("ol", { class: "key-list" }, this.keyMessages(r).map((k) => el("li", {}, el("b", {}, k.head), el("span", {}, k.text)))));
+
     // 2. "In short": one plain line per indicator, with how sure it is
     const brief = card(t("inshort"), el("ul", { class: "brief" }, r.variables.map((v) => {
       const tr = v.trend, rising = tr.slope_per_year > 0;
       const key = !tr.significant ? "short_flat" : rising ? "short_up" : "short_down";
       const icon = !tr.significant ? "=" : rising ? "↑" : "↓";
-      const color = !tr.significant ? "#5d6f68" : rising ? "#8d5f22" : "#2f6684";
+      const color = !tr.significant ? THEME.muted : rising ? THEME.warm : THEME.cool;
       return el("li", {},
         el("b", { style: `color:${color}`, "aria-hidden": "true" }, icon),
         el("span", {}, t(key, { label: this.shortLabel(v.key), before: plain(v.first_mean, v.unit), now: plain(v.last_mean, v.unit) })),
@@ -79,8 +99,7 @@ App.pages.report = {
     const simpleRows = r.variables.map((v) => {
       const sure = sureClass(v.trend.confidence, v.robustness.status);
       return el("tr", {},
-        el("td", {}, this.shortLabel(v.key)),
-        el("td", {}, unitLabel(v.unit)),
+        el("td", {}, this.shortLabel(v.key), el("small", { class: "sub-p" }, unitName(v.unit))),
         el("td", { class: "num" }, val(v.mean, v.unit)),
         el("td", { class: "num" }, val(v.median, v.unit)),
         el("td", { class: "num" }, `${val(v.min, v.unit)} (${v.min_year})`),
@@ -109,7 +128,7 @@ App.pages.report = {
     });
     const table = card(t("rep_table"),
       el("div", { class: "table-wrap" }, el("table", { class: "rep-table" },
-        el("thead", {}, el("tr", {}, [[t("c_ind")], [t("c_unit")], [t("c_mean"), 1], [t("c_median"), 1], [t("c_min"), 1], [t("c_max"), 1], [t("c_std"), 1],
+        el("thead", {}, el("tr", {}, [[t("c_ind")], [t("c_mean"), 1], [t("c_median"), 1], [t("c_min"), 1], [t("c_max"), 1], [t("c_std"), 1],
           [t("c_sen_main"), 1], [t("col_sure")], [t("c_reg_main"), 1], [t("col_evol", { a: yBefore, b: yNow }), 1]]
           .map(([h, num]) => el("th", { class: num ? "num" : null }, h)))),
         el("tbody", {}, simpleRows))),
@@ -151,8 +170,7 @@ App.pages.report = {
     })));
     const reco = card(t("rep_reco"), el("div", { class: "axes" }, r.recommendations.map((a) => el("div", { class: "axis" },
       el("h4", {}, `${a.axis}. ${a.title}`),
-      el("ul", {}, a.items.map((it) => el("li", {}, it.text))),
-      a.artisans?.length ? el("p", { class: "who" }, `${t("rep_artisans")} : ${a.artisans.join(", ")}`) : null))));
+      el("ul", {}, a.items.map((text) => el("li", {}, text)))))));
 
     // small summary table: average of every 5-year block, one row per indicator
     const bins = v0.five_year.map((b) => b.label.replace(/^(\d{4})-(\d{2})(\d{2})$/, "$1–$3"));
@@ -203,16 +221,31 @@ App.pages.report = {
     const method = el("details", { class: "card method" }, el("summary", {}, t("rep_method")),
       el("ul", {}, ["data", "indic", "trend", "sig", "robust", "ols", "limits"].map((k) => el("li", {}, t(`m_${k}`, { lat: fmt(r.place.lat, 3), lon: fmt(r.place.lon, 3), n: r.n_years, start: r.period[0], end: r.period[1] })))));
 
-    const num = (n, card_) => { card_.querySelector("h2")?.prepend(`${n}. `); return card_; };
-    $("rep-body").replaceChildren(intro, brief, num(1, table), num(2, facts), num(3, five), num(4, recent), num(5, charts), num(6, outlook), num(7, reco),
+    // section index in the "technical document" style: 01, 02 ...
+    const num = (n, card_) => { card_.querySelector("h2")?.prepend(el("span", { class: "idx" }, String(n).padStart(2, "0"))); return card_; };
+    $("rep-body").replaceChildren(intro, keyCard, brief, num(1, table), num(2, facts), num(3, five), num(4, recent), num(5, charts), num(6, outlook), num(7, reco),
       glossary, method, el("p", { class: "note-small" }, r.source));
+    if (this.simple) {  // arrived from the home search: the short version first, everything one click away
+      const more = el("button", { type: "button", class: "btn", onclick: () => {
+        this.simple = false;
+        setLink("synthese", { place: this.place, start: this.start, end: this.end });
+        this.render(r);
+        window.scrollTo({ top: 0 });
+      } }, t("rep_more"));
+      outlook.querySelector(".idx")?.remove();  // section numbers belong to the full report only
+      $("rep-body").replaceChildren(intro, keyCard, brief, outlook, el("div", { class: "more-row" }, more), el("p", { class: "note-small" }, r.source));
+      labelCells($("rep-body"));
+      return;
+    }
+    labelCells($("rep-body"));
     r.variables.forEach((v, i) => this.drawDecades(`mini-${i}`, v));
+    fitCharts($("rep-body"));
   },
 
   // one chart per indicator: every year (line) + 5-year averages (bands) + exceptional years (◆) + linear regression
   drawDecades(id, v) {
     const scale = v.unit === "0-1" ? 100 : 1;
-    const color = v.trend.significant ? (v.trend.slope_per_year > 0 ? "#bc7f32" : "#2f6684") : "#5d6f68";
+    const color = v.trend.significant ? (v.trend.slope_per_year > 0 ? THEME.warm : THEME.cool) : THEME.muted;
     const stepX = [], stepY = [];
     v.five_year.forEach((b) => {
       const [a, z] = b.label.split("-").map(Number);
@@ -223,24 +256,66 @@ App.pages.report = {
     describeChart(id, `${this.shortLabel(v.key)}: ${plain(v.first_mean, v.unit)} → ${plain(v.last_mean, v.unit)}; `
       + `${t("c_trend_reg")} ${signed(v.ols.slope_per_decade * scale, 2)}/10 (R² ${fmt(v.ols.r2, 2)})`);
     Plotly.react(id, [
-      { x: stepX, y: stepY, mode: "lines", line: { color: "rgba(36,94,77,0.25)", width: 8 }, hoverinfo: "skip", name: t("rep_5y") },
-      { x: v.series.years, y: v.series.values.map((x) => x * scale), mode: "lines+markers", line: { color: "#245e4d", width: 1.6 },
+      { x: stepX, y: stepY, mode: "lines", line: { color: THEME.band, width: 8 }, hoverinfo: "skip", name: t("rep_5y") },
+      { x: v.series.years, y: v.series.values.map((x) => x * scale), mode: "lines+markers", line: { color: THEME.data, width: 1.6 },
         marker: { size: 3 }, hovertemplate: "%{x} : %{y:.2f}<extra></extra>", name: t("leg_year") },
       { x: v.ols.years, y: v.ols.fitted.map((x) => x * scale), mode: "lines", line: { color, width: 2.4, dash: "dash" },
         hoverinfo: "skip", name: t("leg_regression") },
       { x: [lastYear, ...f.years], y: [lastValue, ...f.hi80].map((x) => x * scale), mode: "lines", line: { width: 0 }, hoverinfo: "skip" },
       { x: [lastYear, ...f.years], y: [lastValue, ...f.lo80].map((x) => x * scale), mode: "lines", line: { width: 0 }, fill: "tonexty",
-        fillcolor: "rgba(188,127,50,0.20)", hoverinfo: "skip" },
-      { x: [lastYear, ...f.years], y: [lastValue, ...f.mean].map((x) => x * scale), mode: "lines", line: { color: "#bc7f32", width: 2, dash: "dot" },
+        fillcolor: THEME.warmBand, hoverinfo: "skip" },
+      { x: [lastYear, ...f.years], y: [lastValue, ...f.mean].map((x) => x * scale), mode: "lines", line: { color: THEME.warm, width: 2, dash: "dot" },
         hovertemplate: `%{x} : %{y:.2f} (${t("fc_forecast")})<extra></extra>` },
-      { x: out.map((o) => o.year), y: out.map((o) => o.value * scale), mode: "markers", marker: { symbol: "diamond", size: 8, color: "#b5452f" },
+      { x: out.map((o) => o.year), y: out.map((o) => o.value * scale), mode: "markers", marker: { symbol: "diamond", size: 8, color: THEME.alert },
         hovertemplate: "%{x} : %{y:.2f} (> 2σ)<extra></extra>", name: "> 2σ" },
     ], plotLayout({
       showlegend: false, hovermode: "closest", margin: { l: 48, r: 8, t: 6, b: 26 },
-      font: { family: "Inter", size: 11, color: "#1d3030" },
-      xaxis: { fixedrange: true, tickformat: "d", dtick: 5, gridcolor: "#eef3ef" },
-      yaxis: { fixedrange: true, gridcolor: "#e3eae5", title: { text: unitLabel(v.unit), font: { size: 11 } } },
+      font: { family: THEME.font, size: 11, color: THEME.ink },
+      xaxis: { fixedrange: true, tickformat: "d", dtick: 5, gridcolor: THEME.grid },
+      yaxis: { fixedrange: true, gridcolor: THEME.grid, title: { text: unitLabel(v.unit), font: { size: 11 } } },
     }), PLOT_CONFIG);
+  },
+
+  // 1. the clearest proven change, 2. what to expect in the last forecast year, 3. the first action
+  keyMessages(r) {
+    const byKey = Object.fromEntries(r.variables.map((v) => [v.key, v]));
+    const proven = r.variables.filter((v) => v.trend.significant && v.robustness.status !== "not_robust");
+    const strength = (v) => Math.abs(v.change) / (v.std || 1);
+    const main = [...proven].sort((a, b) => strength(b) - strength(a))[0];
+    const out = [];
+    if (main) {
+      out.push({ head: t("key_change", { label: this.shortLabel(main.key) }),
+        text: t("key_change_text", { before: plain(main.first_mean, main.unit), now: plain(main.last_mean, main.unit),
+          a: `${main.first_period[0]}–${main.first_period[1]}`, b: `${main.last_period[0]}–${main.last_period[1]}`,
+          sure: sureText(main.trend.confidence, main.robustness.status).toLowerCase() }) });
+    } else {
+      out.push({ head: t("key_nochange"), text: t("key_nochange_text") });
+    }
+    const target = main || byKey.T2M, f = target.forecast, k = f.years.length - 1;
+    out.push({ head: t("key_forecast", { year: f.years[k], label: this.shortLabel(target.key) }),
+      text: t("key_forecast_text", { value: plain(f.mean[k], target.unit), lo: plain(f.lo80[k], target.unit),
+        hi: plain(f.hi80[k], target.unit), normal: plain(target.normal, target.unit) }) });
+    const axis = main && ["RAIN", "SOIL"].includes(main.key) ? r.recommendations[0]
+      : r.recommendations.find((x) => x.axis === "B") || r.recommendations[0];
+    if (axis?.items.length) out.push({ head: t("key_action", { axis: axis.title }), text: axis.items[0] });
+    return out;
+  },
+
+  // every yearly value behind the page, then the forecasts
+  downloadData() {
+    const r = this.data;
+    if (!r) return;
+    const head = r.variables.map((v) => `${this.shortLabel(v.key)} (${csvUnit(v.unit)})`);
+    const years = r.variables[0].series.years;
+    const rows = [
+      ["# ArtisanConnect", r.source], ["# " + t("place"), r.place.name, r.place.lat, r.place.lon], ["# " + t("dl_period"), `${r.period[0]}-${r.period[1]}`], [],
+      [t("c_year"), ...head],
+      ...years.map((y, i) => [y, ...r.variables.map((v) => v.series.values[i])]),
+      [],
+      [t("c_year"), t("c_ind"), t("dl_expected"), t("dl_low80"), t("dl_high80"), t("c_method")],
+      ...r.variables.flatMap((v, k) => v.forecast.years.map((y, i) => [y, head[k], v.forecast.mean[i], v.forecast.lo80[i], v.forecast.hi80[i], t(`fm_${v.forecast.method}`)])),
+    ];
+    downloadCSV(`artisanconnect_${fileSlug(r.place.name)}_${r.period[0]}-${r.period[1]}.csv`, rows);
   },
 
   async writeWithAI() {
@@ -249,6 +324,7 @@ App.pages.report = {
     try {
       const r = await api(`/api/report/ai?place=${this.place}&start=${this.start}&end=${this.end}&lang=${App.state.lang}`);
       out.innerHTML = renderMarkdown(r.answer);
+      labelCells(out);
       out.append(el("p", { class: "model" }, `AI: ${r.model}`));
       out.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth" });
     } catch (e) { out.replaceChildren(errorEl(e)); }

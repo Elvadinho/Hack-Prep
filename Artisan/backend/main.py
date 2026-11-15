@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from backend import config
 from backend.advice import build_advice
-from backend.artisans import PREVENTION, find_artisans
+from backend.prevention import PREVENTION
 from backend.chat import ask, build_context
 from backend.discover import PERIODS, discoveries
 from backend.explore import METRICS, analyze_metric, forecast_context, table_metric
@@ -77,13 +77,6 @@ def region_analysis(region: str, hazard: Hazard):
     return _analysis(region, hazard)
 
 
-@app.get("/api/artisans")
-def artisans(region: str, hazard: Hazard):
-    if region not in REGIONS_BY_ID:
-        raise HTTPException(status_code=404, detail=f"Unknown region '{region}'")
-    return find_artisans(region, hazard)
-
-
 @app.get("/api/overview")
 def overview():
     """Every region x every hazard: the comparison table (like the MVP, for all 10 regions)."""
@@ -136,7 +129,7 @@ def ai_summary(lang: Lang = "fr"):
             lines.append(f"Discovery [{kind}]: {item['text']['en']}")
     question = (
         "Summarise for local authorities what this means: the 3 most important risks, which regions need action "
-        "first, the most surprising findings, the data-quality caution, and concrete prevention steps with local artisans."
+        "first, the most surprising findings, the data-quality caution, and concrete prevention steps."
     )
     try:
         return ask(question, lang, "\n".join(lines), max_tokens=1600)
@@ -222,11 +215,28 @@ def report_ai(place: str, start: Year = config.START_YEAR, end: Year = config.EN
         f"Write a climate synthesis for {data['place']['name']} for local authorities, in this structure: "
         "1) one-paragraph overview of the climate and what is changing; "
         "2) a markdown table 'Indicator | Unit | Mean | Min (year) | Max (year) | Trend/decade (significance) | Change first vs last decade'; "
-        "3) 'Key facts' as bullet points; 4) 'Recommendations' grouped by the axes A-D with concrete actions and artisans. "
+        "3) 'Key facts' as bullet points; 4) 'Recommendations' grouped by the axes A-D with concrete actions. "
         "Explain significance simply. Mention the since-2000 check when a trend is not robust."
     )
     try:
         return ask(question, lang, report_context(data), max_tokens=2200)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+
+class AgentRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    lang: Lang = "fr"
+    region: str | None = None
+    hazard: Hazard | None = None
+
+
+@app.post("/api/agent")
+def agent(body: AgentRequest):
+    """AI agent: the model calls our prewritten tools (statistics, comparisons, forecasts) on NASA data."""
+    from backend.agent import run_agent
+    try:
+        return run_agent(body.question, body.lang, body.region, body.hazard)
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error))
 
@@ -243,11 +253,15 @@ class ChatRequest(BaseModel):
 def chat(body: ChatRequest):
     result = _analysis(body.region, body.hazard)
     context = build_context(
-        result, find_artisans(body.region, body.hazard), PREVENTION[body.hazard]["en"]
+        result, PREVENTION[body.hazard]["en"]
     )
     outlook = _guard(analyze_metric, body.region, body.hazard, "year", config.START_YEAR,
                      config.END_YEAR, body.horizon, 0.05)
     context += "\n" + forecast_context(outlook)
+    # the same hazard in all 10 regions, so national questions ("which region first?") can be answered
+    ranking = sorted(((r.name_en, _analysis(r.id, body.hazard)["risk"]) for r in REGIONS), key=lambda x: -x[1]["score"])
+    context += "\nAll 10 regions for this hazard (risk score /100, level): " + "; ".join(
+        f"{name} {risk['score']} ({risk['level']})" for name, risk in ranking)
     try:
         return ask(body.question, body.lang, context)
     except RuntimeError as error:

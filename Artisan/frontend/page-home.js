@@ -1,30 +1,66 @@
-// HOME: risk map of Cameroon + 3 key numbers + most exposed regions.
+// HOME: 3D risk terrain of Cameroon + 3 key numbers + most exposed regions.
 App.pages.home = {
-  hazard: "heat", rows: null, raster: null, hover: null, discoveries: null,
+  hazard: "heat", rows: null, terrain: null, discoveries: null,
 
   init() {
-    this.raster = CMR.raster(0.04);
-    const canvas = $("map");
-    canvas.addEventListener("mousemove", (e) => this.onHover(e));
-    canvas.addEventListener("mouseleave", () => { this.hover = null; $("map-tip").hidden = true; this.draw(); });
-    canvas.addEventListener("click", (e) => { const id = this.regionAt(e); if (id) location.hash = `#/synthese?place=${id}`; });
-    window.addEventListener("resize", () => { if (App.current === "home") this.draw(); });
+    this.terrain = Terrain3D.create($("scene"), $("scene-labels"), {
+      onHover: (id, event) => this.onHover(id, event),
+      onPick: (id) => { location.hash = `#/synthese?place=${id}`; },
+    });
+    if (!this.terrain) $("scene").append(el("p", { class: "scene-fallback" }, t("scene_off")));
+    $("town-search").addEventListener("submit", (e) => { e.preventDefault(); this.findTown(); });
+    $("town-input").addEventListener("input", () => { $("town-error").hidden = true; });
     api("/api/discoveries").then((d) => { this.discoveries = d; this.renderKeys(); }).catch(() => {});
+    api("/api/validation").then((v) => { this.validation = v; this.renderStatus(); }).catch(() => {});
   },
 
-  show() { this.renderControls(); this.load(); },
-  refresh() { this.renderControls(); this.draw(); this.renderKeys(); this.renderTop(); },
+  show(params = {}) {
+    if (HAZARDS.includes(params.hazard)) this.hazard = params.hazard;
+    this.renderControls(); this.load();
+  },
+
+  // town search: any place of the app (capitals, towns, neighbouring capitals), with or without accents
+  renderSearch() {
+    $("town-input").placeholder = t("search_ph");
+    $("town-list").replaceChildren(...App.state.places.map((p) => el("option", { value: placeLabel(p) })));
+  },
+  findTown() {
+    const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const query = norm($("town-input").value);
+    const places = App.state.places;
+    const hit = query && (places.find((p) => norm(placeLabel(p)) === query) || places.find((p) => norm(p.name) === query)
+      || places.find((p) => norm(p.name).startsWith(query)) || places.find((p) => norm(placeLabel(p)).includes(query)));
+    if (!hit) { $("town-error").textContent = t("search_none"); $("town-error").hidden = false; return; }
+    location.hash = `#/synthese?place=${hit.id}&view=simple`;
+  },
+  refresh() { this.renderControls(); this.draw(); this.renderKeys(); this.renderTop(); if (this.rows) this.describe(); },
 
   renderControls() {
+    this.renderSearch();
     seg($("home-hazard"), HAZARDS.map((h) => [h, t(`hazard_${h}`)]), this.hazard, (h) => { this.hazard = h; this.load(); });
     $("home-hazard").setAttribute("aria-label", t("hazard"));
-    $("legend").replaceChildren(...Object.entries(LEVEL_COLORS).map(([level, color]) => {
-      const swatch = el("i"); swatch.style.background = color;
-      return el("span", {}, swatch, t(`level_${level}`));
-    }));
+    // vertical scale of the column heights: 100 at the top, 0 at the bottom
+    const bands = [["very_high", "75–100"], ["high", "50–74"], ["medium", "25–49"], ["low", "0–24"]];
+    $("legend").replaceChildren(el("p", { class: "risk-scale-title" }, t("scale_title")),
+      ...bands.map(([level, range]) => {
+        const bar = el("i"); bar.style.background = LEVEL_COLORS[level];
+        return el("div", { class: "risk-band" }, bar, el("span", {}, t(`level_${level}`)), el("small", {}, range));
+      }));
+    // the years behind every number on the page, and the forecast horizon in red
+    const years = [1981, 1990, 2000, 2010, 2020, 2025];
+    $("timeline").replaceChildren(...years.map((y) => el("span", {}, y)), el("span", { class: "future" }, "→ 2030"));
+    this.renderStatus();
+  },
+
+  renderStatus() {
+    const checks = this.validation ? `${this.validation.summary.pass}/${this.validation.checks.length}` : "…";
+    $("hero-status").replaceChildren(
+      ...[[t("st_source"), "NASA POWER / MERRA-2"], [t("st_points"), "10"], [t("st_days"), "16 436"], [t("st_checks"), checks]]
+        .map(([k, v]) => el("span", {}, `${k} `, el("b", {}, v))));
   },
 
   async load() {
+    setLink("", { hazard: this.hazard === "heat" ? "" : this.hazard });
     $("home-keys").replaceChildren(loadingEl());
     try {
       this.rows = await api(`/api/table?metric=${this.hazard}&horizon=3`);
@@ -106,94 +142,20 @@ App.pages.home = {
     return labels[App.state.lang][this.hazard];
   },
 
-  // ---- canvas map
+  // ---- 3D terrain: heights and colours from the scores of the selected hazard
   draw() {
-    const R = this.raster;
-    if (!R || App.current !== "home") return;
-    const canvas = $("map"), box = canvas.parentElement;
-    const { lonMin, lonMax, latMin, latMax } = CMR.bounds;
-    // fit the map in the screen: limit its height, keep the real proportions
-    const ratio = (latMax - latMin) / (lonMax - lonMin);
-    const maxH = Math.max(360, Math.min(600, window.innerHeight - 260));
-    const W = Math.min(box.clientWidth, maxH / ratio), H = W * ratio;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.height = `${H}px`; canvas.style.width = `${W}px`;
-    const ctx = canvas.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const sx = W / (lonMax - lonMin), sy = H / (latMax - latMin);
-    const X = (lon) => (lon - lonMin) * sx, Y = (lat) => (latMax - lat) * sy;
-    const cw = R.step * sx, ch = R.step * sy;
-    const rows = Object.fromEntries((this.rows || []).map((r) => [r.region.id, r]));
-    const colors = R.ids.map((id) => (rows[id] ? LEVEL_COLORS[rows[id].risk_level] : "#dfe7e2"));
-    const hoverK = R.ids.indexOf(this.hover);
-
-    ctx.fillStyle = "#f8fbf8"; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#5d6f68"; ctx.textAlign = "center";
-    for (const n of CMR.neighbours) {
-      ctx.font = `${n.italic ? "italic " : ""}600 ${Math.max(9, W / 64)}px Inter, sans-serif`;
-      ctx.fillText(n[App.state.lang], X(n.lon), Y(n.lat));
-    }
-    for (let r = 0; r < R.rows; r++) for (let c = 0; c < R.cols; c++) {
-      const k = R.grid[r * R.cols + c];
-      if (k < 0) continue;
-      ctx.fillStyle = k === hoverK ? shade(colors[k]) : colors[k];
-      ctx.fillRect(c * cw, r * ch, cw + 0.7, ch + 0.7);
-    }
-    ctx.beginPath();  // white borders between regions
-    for (let r = 0; r < R.rows; r++) for (let c = 0; c < R.cols; c++) {
-      const k = R.grid[r * R.cols + c];
-      if (k < 0) continue;
-      const right = c + 1 < R.cols ? R.grid[r * R.cols + c + 1] : -1;
-      const down = r + 1 < R.rows ? R.grid[(r + 1) * R.cols + c] : -1;
-      if (right >= 0 && right !== k) { ctx.moveTo((c + 1) * cw, r * ch); ctx.lineTo((c + 1) * cw, (r + 1) * ch); }
-      if (down >= 0 && down !== k) { ctx.moveTo(c * cw, (r + 1) * ch); ctx.lineTo((c + 1) * cw, (r + 1) * ch); }
-    }
-    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.beginPath();
-    CMR.outline.forEach(([lon, lat], i) => (i ? ctx.lineTo(X(lon), Y(lat)) : ctx.moveTo(X(lon), Y(lat))));
-    ctx.closePath(); ctx.strokeStyle = "#153c37"; ctx.lineWidth = 1.5; ctx.stroke();
-
-    const size = Math.max(10, W / 50);
-    for (const id of R.ids) {
-      const [lat, lon] = CMR.seeds[id][0];
-      ctx.beginPath(); ctx.arc(X(lon), Y(lat), 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "#153c37"; ctx.lineWidth = 1.4; ctx.stroke();
-      const p = R.labels[id], region = regionById(id);
-      ctx.textAlign = "center"; ctx.lineJoin = "round"; ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(255,255,255,.92)"; ctx.fillStyle = "#153c37";
-      ctx.font = `700 ${size}px Inter, sans-serif`;
-      const name = region ? regionName(region) : id;
-      ctx.strokeText(name, X(p.lon), Y(p.lat)); ctx.fillText(name, X(p.lon), Y(p.lat));
-      if (rows[id]) {
-        ctx.font = `600 ${size * 0.9}px Inter, sans-serif`;
-        const score = String(rows[id].risk_score);
-        ctx.strokeText(score, X(p.lon), Y(p.lat) + size * 1.1); ctx.fillText(score, X(p.lon), Y(p.lat) + size * 1.1);
-      }
-    }
+    if (!this.terrain || !this.rows) return;
+    this.terrain.update(Object.fromEntries(this.rows.map((r) => [r.region.id,
+      { score: r.risk_score, level: r.risk_level, name: regionName(r.region) }])));
   },
 
-  regionAt(event) {
-    const R = this.raster, rect = $("map").getBoundingClientRect();
-    const { lonMin, lonMax, latMin, latMax } = CMR.bounds;
-    const lon = lonMin + ((event.clientX - rect.left) / rect.width) * (lonMax - lonMin);
-    const lat = latMax - ((event.clientY - rect.top) / rect.height) * (latMax - latMin);
-    const c = Math.floor((lon - lonMin) / R.step), r = Math.floor((latMax - lat) / R.step);
-    if (c < 0 || r < 0 || c >= R.cols || r >= R.rows) return null;
-    const k = R.grid[r * R.cols + c];
-    return k >= 0 ? R.ids[k] : null;
-  },
-
-  onHover(e) {
-    const id = this.regionAt(e), tip = $("map-tip");
-    if (id !== this.hover) { this.hover = id; this.draw(); }
-    if (!id) { tip.hidden = true; return; }
+  onHover(id, event) {
+    const tip = $("map-tip");
+    if (!id || !event) { tip.hidden = true; return; }
     const row = (this.rows || []).find((r) => r.region.id === id), region = regionById(id);
-    const rect = $("map").getBoundingClientRect();
+    const rect = $("scene").getBoundingClientRect();
     tip.replaceChildren(`${regionName(region)} · ${t(`hazard_${this.hazard}`)}`, el("b", {}, row ? `${row.risk_score}/100` : "…"));
-    tip.style.left = `${e.clientX - rect.left}px`; tip.style.top = `${e.clientY - rect.top}px`; tip.hidden = false;
+    tip.style.transform = `translate(${event.clientX - rect.left + 16}px, ${event.clientY - rect.top + 16}px)`;
+    tip.hidden = false;
   },
 };
-
-function shade(hex) {  // lighten a colour for hover
-  const [r, g, b] = hex.match(/\w\w/g).map((h) => parseInt(h, 16));
-  return `rgb(${Math.round(r + (255 - r) * 0.3)},${Math.round(g + (255 - g) * 0.3)},${Math.round(b + (255 - b) * 0.3)})`;
-}

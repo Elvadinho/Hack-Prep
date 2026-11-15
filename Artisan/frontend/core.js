@@ -5,8 +5,16 @@ const App = {
   current: null,
 };
 const $ = (id) => document.getElementById(id);
-const COLORS = ["#245e4d", "#bc7f32", "#407a9c", "#8b5fa8"];
-const LEVEL_COLORS = { low: "#9cc5a9", medium: "#e6c065", high: "#d6893a", very_high: "#b5452f" };
+// one palette for charts, map and 3D scene (dark "observatory" theme)
+// one palette for charts, map and 3D scene: white line work + one red accent on black
+const THEME = {
+  data: "#ededed", warm: "#e5432f", cool: "#8fb8cc", alert: "#e5432f", muted: "#6b6b6b", ink: "#a8a8a8",
+  grid: "#1c1c1c", band: "rgba(237,237,237,0.07)", warmBand: "rgba(229,67,47,0.20)",
+  watermark: "rgba(237,237,237,0.08)", font: "'IBM Plex Mono', ui-monospace, monospace",
+};
+const COLORS = ["#ededed", "#e5432f", "#8fb8cc", "#c9a96e"];
+// risk ramp: neutral grey -> red, so danger is what stands out
+const LEVEL_COLORS = { low: "#5c6266", medium: "#a39a8c", high: "#e07a5f", very_high: "#e5432f" };
 const HAZARDS = ["heat", "flood", "drought", "landslide"];
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -24,6 +32,17 @@ const pct = (p) => (App.state.lang === "fr" ? `${fmt(p * 100, 0)} %` : `${fmt(p 
 const fmtP = (p) => (p < 0.001 ? `p < ${fmt(0.001, 3)}` : `p = ${fmt(p, 3)}`);
 // soil moisture (0-1 index) is shown as a percentage: 0.62 -> "62 %"
 const unitLabel = (u) => (u === "days" ? t("u_days") : u === "0-1" ? "%" : u);
+// full unit name for chart axes ("°C", "jours par an", "mm", "%")
+const unitName = (u) => (u === "days" ? t("u_days_year") : u === "0-1" ? "%" : u);
+// a 0-1 analysis (soil moisture) scaled to % for charts
+function asPercent(a) {
+  if (a.unit !== "0-1") return a;
+  const k = (list) => list.map((v) => v * 100);
+  const fc = a.forecast;
+  return { ...a, series: { ...a.series, values: k(a.series.values) }, line: { ...a.line, trend: k(a.line.trend) },
+    forecast: { ...fc, mean: k(fc.mean), lo80: k(fc.lo80), hi80: k(fc.hi80), lo95: k(fc.lo95), hi95: k(fc.hi95) },
+    extreme: { ...a.extreme, threshold: a.extreme.threshold * 100 } };
+}
 const digits = (u) => (u === "0-1" ? 3 : u === "mm" || u === "days" ? 0 : 2);
 const withUnit = (v, u) => (u === "0-1" ? `${fmt(v * 100, 0)} %` : `${fmt(v, digits(u))} ${unitLabel(u)}`);
 // plain value with 1 decimal for temperatures, 0 for counts/rain: easy to read
@@ -93,6 +112,7 @@ function describeChart(id, text) {
 }
 
 function fillYears(select, value) {
+  select.setAttribute("aria-label", t(select.id.endsWith("start") ? "from" : "to"));
   const years = [];
   for (let y = App.state.years[0]; y <= App.state.years[1]; y++) years.push(y);
   select.replaceChildren(...years.map((y) => el("option", { value: y }, y)));
@@ -119,10 +139,11 @@ function fillPlaces(select, value, { withCountries = false } = {}) {
 const PLOT_CONFIG = { displayModeBar: false, responsive: true };
 function plotLayout(extra = {}) {
   return {
-    paper_bgcolor: "#fff", plot_bgcolor: "#fff", font: { family: "Inter, sans-serif", size: 12, color: "#1d3030" },
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { family: THEME.font, size: 11, color: THEME.ink },
+    hoverlabel: { bgcolor: "#000", bordercolor: "#3a3a3a", font: { family: THEME.font, color: "#ededed", size: 11 } },
     margin: { l: 52, r: 14, t: 16, b: 40 }, hovermode: "x unified",
-    xaxis: { tickformat: "d", fixedrange: true, gridcolor: "#eef3ef", zeroline: false },
-    yaxis: { fixedrange: true, gridcolor: "#e3eae5", zeroline: false },
+    xaxis: { tickformat: "d", fixedrange: true, gridcolor: THEME.grid, zeroline: false, linecolor: THEME.grid },
+    yaxis: { fixedrange: true, gridcolor: THEME.grid, zeroline: false },
     legend: { orientation: "h", y: -0.18 },
     ...extra,
   };
@@ -166,4 +187,57 @@ function sparkline(ev) {
   svg.append(svgEl("polyline", { class: "trend", points: ev.line.years.map((yr, i) => `${X(yr)},${Y(ev.line.trend[i])}`).join(" ") }));
   if (ev.change_year) svg.append(svgEl("line", { class: "mark", x1: X(ev.change_year), x2: X(ev.change_year), y1: 0, y2: h }));
   return svg;
+}
+
+// small screens show each table row as a block: every cell needs the name of its column
+function labelCells(root) {
+  root.querySelectorAll("table").forEach((table) => {
+    const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; });
+    });
+  });
+}
+
+// Plotly measures its box when it draws; if the grid settles afterwards the chart can stay too wide.
+// Re-measure once the layout is final (and on every window resize, through Plotly's responsive flag).
+function fitCharts(root) {
+  requestAnimationFrame(() => root.querySelectorAll(".js-plotly-plot").forEach((plot) => Plotly.Plots.resize(plot)));
+}
+
+// ---- links that keep the page state: #/synthese?place=...&start=... (no reload, no extra Back step)
+function setLink(path, params) {
+  const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
+  const hash = `#/${path}${query ? `?${query}` : ""}`;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+}
+const yearParam = (value, fallback) => {
+  const y = Number(value);
+  return Number.isInteger(y) && y >= App.state.years[0] && y <= App.state.years[1] ? y : fallback;
+};
+
+// ---- the data behind a view, as a CSV file built in the browser (opens in Excel, LibreOffice, Python)
+function downloadCSV(filename, rows) {
+  const cell = (v) => {
+    if (v === null || v === undefined || Number.isNaN(v)) return "";
+    const text = typeof v === "number" ? String(Math.round(v * 10000) / 10000) : String(v);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "\ufeff" + rows.map((row) => row.map(cell).join(",")).join("\r\n");  // BOM: accents survive in Excel
+  const link = el("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })), download: filename });
+  document.body.append(link);
+  link.click();
+  setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+}
+const fileSlug = (text) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+// unit written in CSV headers: soil moisture stays a 0-1 index (the raw NASA value), days follow the language
+const csvUnit = (u) => (u === "0-1" ? "0-1" : unitName(u));
+
+// ---- "copy link" with visible confirmation
+async function copyLink(button) {
+  const label = button.textContent;
+  try { await navigator.clipboard.writeText(location.href); button.textContent = t("link_copied"); }
+  catch { window.prompt(t("copy_link"), location.href); }
+  setTimeout(() => { button.textContent = label; }, 1800);
 }

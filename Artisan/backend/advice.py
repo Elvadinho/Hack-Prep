@@ -3,7 +3,7 @@
 Rules are simple and transparent (judges can read them):
   1. PRIORITY from the results: urgent / prepare / watch
   2. TIMING from the region's own NASA monthly climate (hottest / wettest / driest month)
-  3. ACTIONS per hazard, each linked to an artisan trade
+  3. ACTIONS per hazard
   4. FACTS: the numbers that justify the advice (trend, forecast and how reliable it was on the past)
 """
 from functools import lru_cache
@@ -11,7 +11,6 @@ from functools import lru_cache
 import pandas as pd
 
 from backend import config
-from backend.artisans import find_artisans
 from backend.explore import analyze_metric
 from backend.nasa_power import load_daily
 from backend.regions import get_region
@@ -23,28 +22,28 @@ MONTHS = {
 
 ACTIONS: dict[str, list[dict]] = {
     "heat": [
-        {"fr": "Isoler et ventiler les toits des écoles, centres de santé et logements", "en": "Insulate and ventilate roofs of schools, clinics and homes", "trade": "roof"},
-        {"fr": "Installer de l'ombre : auvents, brise-soleil, arbres", "en": "Add shade: awnings, sun breakers, trees", "trade": "shading"},
-        {"fr": "Prévoir des points d'eau potable et décaler le travail en plein air tôt le matin", "en": "Provide drinking-water points and move outdoor work to early morning", "trade": "water"},
-        {"fr": "Alerter et suivre les personnes âgées et les enfants pendant les pics de chaleur", "en": "Warn and check on elderly people and children during heat peaks", "trade": None},
+        {"fr": "Isoler et ventiler les toits des écoles, centres de santé et logements", "en": "Insulate and ventilate roofs of schools, clinics and homes"},
+        {"fr": "Installer de l'ombre : auvents, brise-soleil, arbres", "en": "Add shade: awnings, sun breakers, trees"},
+        {"fr": "Prévoir des points d'eau potable et décaler le travail en plein air tôt le matin", "en": "Provide drinking-water points and move outdoor work to early morning"},
+        {"fr": "Alerter et suivre les personnes âgées et les enfants pendant les pics de chaleur", "en": "Warn and check on elderly people and children during heat peaks"},
     ],
     "flood": [
-        {"fr": "Curer et agrandir les caniveaux et buses", "en": "Clean and widen drains and culverts", "trade": "drain"},
-        {"fr": "Surélever seuils et fondations dans les zones basses", "en": "Raise doorsteps and foundations in low areas", "trade": "foundation"},
-        {"fr": "Ne pas construire dans les bas-fonds et lits de rivières", "en": "Do not build in low-lying areas and river beds", "trade": None},
-        {"fr": "Préparer un plan d'évacuation et un kit d'urgence par quartier", "en": "Prepare an evacuation plan and an emergency kit per neighbourhood", "trade": None},
+        {"fr": "Curer et agrandir les caniveaux et buses", "en": "Clean and widen drains and culverts"},
+        {"fr": "Surélever seuils et fondations dans les zones basses", "en": "Raise doorsteps and foundations in low areas"},
+        {"fr": "Ne pas construire dans les bas-fonds et lits de rivières", "en": "Do not build in low-lying areas and river beds"},
+        {"fr": "Préparer un plan d'évacuation et un kit d'urgence par quartier", "en": "Prepare an evacuation plan and an emergency kit per neighbourhood"},
     ],
     "drought": [
-        {"fr": "Construire des citernes pour stocker l'eau de pluie avant la saison sèche", "en": "Build tanks to store rainwater before the dry season", "trade": "tank"},
-        {"fr": "Réhabiliter ou creuser des puits et forages", "en": "Repair or dig wells and boreholes", "trade": "well"},
-        {"fr": "Passer à l'irrigation goutte-à-goutte et aux semences résistantes", "en": "Switch to drip irrigation and drought-tolerant seeds", "trade": "irrigation"},
-        {"fr": "Organiser des réserves de fourrage et d'eau pour le bétail", "en": "Organise fodder and water reserves for livestock", "trade": None},
+        {"fr": "Construire des citernes pour stocker l'eau de pluie avant la saison sèche", "en": "Build tanks to store rainwater before the dry season"},
+        {"fr": "Réhabiliter ou creuser des puits et forages", "en": "Repair or dig wells and boreholes"},
+        {"fr": "Passer à l'irrigation goutte-à-goutte et aux semences résistantes", "en": "Switch to drip irrigation and drought-tolerant seeds"},
+        {"fr": "Organiser des réserves de fourrage et d'eau pour le bétail", "en": "Organise fodder and water reserves for livestock"},
     ],
     "landslide": [
-        {"fr": "Construire des murs de soutènement et gabions sur les pentes habitées", "en": "Build retaining walls and gabions on inhabited slopes", "trade": "retaining"},
-        {"fr": "Drainer les pentes pour évacuer l'eau de pluie", "en": "Drain slopes to evacuate rainwater", "trade": "drain"},
-        {"fr": "Replanter la végétation sur les talus dénudés", "en": "Replant vegetation on bare embankments", "trade": "revegetation"},
-        {"fr": "Évacuer les maisons à risque après plusieurs jours de forte pluie", "en": "Evacuate at-risk homes after several days of heavy rain", "trade": None},
+        {"fr": "Construire des murs de soutènement et gabions sur les pentes habitées", "en": "Build retaining walls and gabions on inhabited slopes"},
+        {"fr": "Drainer les pentes pour évacuer l'eau de pluie", "en": "Drain slopes to evacuate rainwater"},
+        {"fr": "Replanter la végétation sur les talus dénudés", "en": "Replant vegetation on bare embankments"},
+        {"fr": "Évacuer les maisons à risque après plusieurs jours de forte pluie", "en": "Evacuate at-risk homes after several days of heavy rain"},
     ],
 }
 
@@ -127,18 +126,7 @@ def build_advice(region_id: str, hazard: str, horizon: int, lang: str) -> dict:
         facts.append("⚠ La tendance ne se confirme pas depuis 2000 (possible artefact MERRA-2 de 1998)." if lang == "fr"
                      else "⚠ The trend is not confirmed since 2000 (possible 1998 MERRA-2 artifact).")
 
-    artisans = find_artisans(region_id, hazard, limit=6)
-    keywords = {"roof": ["roof", "couvreur"], "shading": ["shading", "carpenter"], "water": ["tank", "well"],
-                "drain": ["drain", "plumber", "mason"], "foundation": ["foundation", "mason"],
-                "tank": ["tank"], "well": ["well"], "irrigation": ["irrigation"],
-                "retaining": ["retaining", "gabion", "mason"], "revegetation": ["revegetation", "landscaper"]}
-    actions = []
-    for item in ACTIONS[hazard]:
-        match = []
-        if item["trade"]:
-            words = keywords[item["trade"]]
-            match = [x["name"] for x in artisans if any(w in (x["trade_en"] + x["services_en"]).lower() for w in words)][:2]
-        actions.append({"text": item[lang], "artisans": match})
+    actions = [item[lang] for item in ACTIONS[hazard]]
 
     return {
         "region": a["region"],
@@ -148,5 +136,4 @@ def build_advice(region_id: str, hazard: str, horizon: int, lang: str) -> dict:
         "facts": facts,
         "timing": _timing(hazard, monthly_climate(region_id), lang),
         "actions": actions,
-        "artisans": artisans,
     }

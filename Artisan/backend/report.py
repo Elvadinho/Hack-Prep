@@ -15,7 +15,6 @@ import pandas as pd
 from scipy.stats import linregress, t as student_t
 
 from backend import config
-from backend.artisans import find_artisans
 from backend.forecast import backtest, calibrate, forecast, hindcast
 from backend.nasa_power import load_daily
 from backend.regions import REGIONS, REGIONS_BY_ID
@@ -371,25 +370,15 @@ def _recommendations(place: dict, blocks: dict, rain_mean: float, lang: str) -> 
 
     gov = [("Système d'alerte précoce : suivre ces indicateurs NASA chaque saison avec les services météorologiques.",
             "Early-warning system: track these NASA indicators every season with the meteorological services.", None),
-           ("Comité local climat associant artisans, agriculteurs, éleveurs et services de santé.",
-            "Local climate committee bringing together artisans, farmers, herders and health services.", None)]
+           ("Comité local climat associant habitants, agriculteurs, éleveurs, artisans du bâtiment et services de santé.",
+            "Local climate committee bringing together residents, farmers, herders, builders and health services.", None)]
     if region_id in BORDERS:
         partners = BORDERS[region_id][0 if fr else 1]
         gov.append((f"Coopération transfrontalière sur l'eau, les pâturages et les alertes avec {partners}.",
                     f"Cross-border cooperation on water, grazing and alerts with {partners}.", None))
     axes.append(("D", "Gouvernance et alerte précoce", "Governance and early warning", gov))
 
-    def axis_artisans(items: list) -> list[str]:
-        """One short list per axis: artisans for the axis' hazards, those in the place's region first."""
-        hazards = list(dict.fromkeys(h for _, _, h in items if h))
-        found = [a for h in hazards for a in find_artisans(region_id, h, limit=6)]
-        local = [a["name"] for a in found if a["local"]]
-        others = [a["name"] for a in found if not a["local"]]
-        return list(dict.fromkeys(local or others))[:3]
-
-    return [{"axis": code, "title": title_fr if fr else title_en,
-             "items": [{"text": f_ if fr else e_, "artisans": []} for f_, e_, _ in items],
-             "artisans": axis_artisans(items)}
+    return [{"axis": code, "title": title_fr if fr else title_en, "items": [f_ if fr else e_ for f_, e_, _ in items]}
             for code, title_fr, title_en, items in axes if items]
 
 
@@ -436,6 +425,5 @@ def report_context(report: dict) -> str:
                      f"(80% range {v['forecast']['lo80'][-1]:.2f} to {v['forecast']['hi80'][-1]:.2f}), 1991-2020 normal {v['normal']:.2f}")
     lines += ["Key facts: " + " | ".join(report["facts"])]
     for axis in report["recommendations"]:
-        lines.append(f"Recommendations {axis['axis']} {axis['title']}: " + " | ".join(i["text"] for i in axis["items"])
-                     + (f" (artisans: {', '.join(axis['artisans'])})" if axis["artisans"] else ""))
+        lines.append(f"Recommendations {axis['axis']} {axis['title']}: " + " | ".join(axis["items"]))
     return "\n".join(lines)

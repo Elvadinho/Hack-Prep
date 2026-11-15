@@ -1,16 +1,25 @@
 // COMPARE: same NASA indicator for 2-3 places (towns or neighbouring countries), animated year by year.
 App.pages.compare = {
-  places: ["centre", "country_chad", "country_nigeria"],
+  places: ["centre", "country_chad", "town_kousseri"],  // Yaoundé, N'Djamena, Kousséri
   variable: "T2M", start: 1981, end: 2025, data: null, playing: false, frames: [],
 
   init() {
     $("cmp-start").addEventListener("change", (e) => { this.start = Number(e.target.value); this.load(); });
     $("cmp-end").addEventListener("change", (e) => { this.end = Number(e.target.value); this.load(); });
     $("cmp-play").addEventListener("click", () => (this.playing ? this.pause() : this.play()));
+    $("cmp-csv").addEventListener("click", () => this.downloadData());
+    $("cmp-link").addEventListener("click", (e) => copyLink(e.currentTarget));
   },
 
-  show() { this.renderControls(); this.load(); },
-  refresh() { this.show(); },
+  show(params = {}) {
+    const ids = (params.places || "").split(",").filter((id) => App.state.places.some((p) => p.id === id)).slice(0, 3);
+    if (ids.length >= 2) this.places = ids;
+    if (["T2M", "TXX", "TNN", "RAIN", "HOT", "SOIL"].includes(params.variable)) this.variable = params.variable;
+    this.start = yearParam(params.start, this.start);
+    this.end = yearParam(params.end, this.end);
+    this.renderControls(); this.load();
+  },
+  refresh() { this.show({}); },
 
   renderControls() {
     const picks = this.places.map((id, i) => {
@@ -39,6 +48,7 @@ App.pages.compare = {
   },
 
   async load() {
+    setLink("comparer", { places: this.places.join(","), variable: this.variable, start: this.start, end: this.end });
     if (this.end - this.start < 9) { $("cmp-cards").replaceChildren(errorEl(new Error(t("years_min")))); return; }
     $("cmp-cards").replaceChildren(loadingEl());
     try {
@@ -69,18 +79,19 @@ App.pages.compare = {
       mode: "lines", name: p.place.label, line: { color: COLORS[i], width: 4, shape: "spline" }, hoverinfo: "skip",
     }));
     const yearLabel = (yr) => [{ xref: "paper", yref: "paper", x: 0.01, y: 0.98, xanchor: "left", yanchor: "top", showarrow: false,
-      text: `<b>${yr}</b>`, font: { size: 28, color: "rgba(21,60,55,0.22)" } }];
+      text: `<b>${yr}</b>`, font: { size: 28, color: THEME.watermark } }];
 
     const last = years.length - 1;
     const layout = plotLayout({
-      xaxis: { tickformat: "d", fixedrange: true, gridcolor: "#eef3ef", range: [years[0] - 0.5, years[last] + 0.5] },
-      yaxis: { fixedrange: true, gridcolor: "#e3eae5", range: [lo - pad, hi + pad], title: { text: unit === "0-1" ? "" : unitLabel(unit) } },
+      xaxis: { tickformat: "d", fixedrange: true, gridcolor: THEME.grid, range: [years[0] - 0.5, years[last] + 0.5] },
+      yaxis: { fixedrange: true, gridcolor: THEME.grid, range: [lo - pad, hi + pad], title: { text: unit === "0-1" ? "" : unitLabel(unit) } },
       annotations: yearLabel(REDUCED_MOTION ? `${years[0]}–${years[last]}` : years[0]),
     });
     describeChart("cmp-chart", `${d.label}, ${years[0]}–${years[last]}: ` + d.places.map((p) =>
       `${p.place.label} ${withUnit(p.first_mean, unit)} → ${withUnit(p.last_mean, unit)}, ${signed(p.trend.slope_per_decade, 2)}/10 (${fmtP(p.trend.p_value)})`).join("; "));
     const startK = REDUCED_MOTION ? last : 0;
     await Plotly.newPlot("cmp-chart", [...observed(startK), ...trends(startK)], layout, PLOT_CONFIG);
+    fitCharts(document.querySelector('[data-page="compare"]'));
 
     this.frames = years.map((yr, k) => ({
       name: String(yr),
@@ -90,6 +101,19 @@ App.pages.compare = {
     }));
     await Plotly.addFrames("cmp-chart", this.frames);
     if (!REDUCED_MOTION) this.play(); else this.setButton(false);
+  },
+
+  // one column per place, one row per year
+  downloadData() {
+    const d = this.data;
+    if (!d) return;
+    const years = d.places[0].series.years;
+    const rows = [
+      ["# ArtisanConnect", "NASA POWER / MERRA-2"], ["# " + t("indicator"), `${d.label} (${csvUnit(d.unit)})`], [],
+      [t("c_year"), ...d.places.map((p) => `${p.place.label} (${p.place.lat}N ${p.place.lon}E)`)],
+      ...years.map((y, i) => [y, ...d.places.map((p) => p.series.values[i])]),
+    ];
+    downloadCSV(`artisanconnect_compare_${d.variable.toLowerCase()}_${this.start}-${this.end}.csv`, rows);
   },
 
   play() {

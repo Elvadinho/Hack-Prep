@@ -33,7 +33,6 @@ def test_bad_inputs_are_rejected(fake_power):
     assert client.post("/api/chat", json=empty).status_code == 422
 
 
-def test_artisans_local_first():
-    rows = client.get("/api/artisans", params={"region": "littoral", "hazard": "flood"}).json()
-    assert rows and rows[0]["local"] is True
-    assert all("flood" in row["hazards"] for row in rows)
+def test_prevention_actions_exist_for_every_hazard():
+    hazards = client.get("/api/hazards").json()
+    assert all(len(info["prevention"]["fr"]) >= 3 and len(info["prevention"]["en"]) >= 3 for info in hazards.values())

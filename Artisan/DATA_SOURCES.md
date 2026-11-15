@@ -70,5 +70,4 @@ FastAPI, Uvicorn, httpx, pandas, NumPy, SciPy, pymannkendall, python-dotenv, Lea
 
 ## 5. Other content
 
-- **Artisan directory** (`data/artisans.json`): fictional demonstration entries only — no real people or personal data.
 - **Pre-existing work:** an earlier independent prototype (`MVP/`, created 2026-11-07) explored the same challenge; to be declared per Space Apps rules. `Artisan/` is the new implementation.

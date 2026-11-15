@@ -8,18 +8,19 @@ from openai import OpenAI, OpenAIError
 
 from backend import config
 
-SYSTEM_PROMPT = """You are Artisan, an assistant helping communities in Cameroon prevent natural disasters.
+SYSTEM_PROMPT = """You are ArtisanConnect, an assistant helping communities in Cameroon prevent natural disasters.
 Rules:
 - Use ONLY the facts in the CONTEXT block (computed from NASA data). Never invent numbers or events.
 - Answer in {language}, in short simple sentences a non-scientist understands.
 - Always say how confident the trend is, and that this is a trend analysis, not a forecast of a specific disaster.
-- Give practical prevention actions and mention the local artisans listed in CONTEXT when useful.
-- If the question cannot be answered from CONTEXT, say so and say which data would be needed."""
+- Give practical prevention actions from CONTEXT when useful.
+- If the question cannot be answered from CONTEXT, say so and say which data would be needed.
+- Never show internal codes such as very_high or very_likely: say them in plain words in {language}."""
 
 LANGUAGES = {"fr": "French", "en": "English"}
 
 
-def build_context(analysis: dict, artisans: list[dict], prevention: list[str]) -> str:
+def build_context(analysis: dict, prevention: list[str]) -> str:
     """Plain-text summary of everything the AI is allowed to use."""
     region, info = analysis["region"], analysis["info"]
     trend, risk = analysis["trend"], analysis["risk"]
@@ -38,32 +39,20 @@ def build_context(analysis: dict, artisans: list[dict], prevention: list[str]) -
         f"Trend extrapolation to {line['years'][-1]}: {line['trend'][-1]:.3f} {info['unit']} "
         f"(95% range of a single year {line['lower'][-1]:.3f} to {line['upper'][-1]:.3f})",
         "Prevention actions: " + "; ".join(prevention),
-        "Artisans (demo directory): "
-        + "; ".join(f"{a['name']} - {a['trade_en']} ({a['region']})" for a in artisans),
     ]
     return "\n".join(lines)
 
 
-def ask(question: str, lang: str, context: str, max_tokens: int = 700) -> dict:
-    """Send the question + context to OpenRouter, trying the fallback model on failure."""
+def complete(messages: list[dict], max_tokens: int = 700, temperature: float = 0.3) -> dict:
+    """One call to OpenRouter with a full message list, trying the fallback model on failure."""
     if not config.OPENROUTER_API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY is missing in .env")
-
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=config.OPENROUTER_API_KEY,
-        timeout=60,
-    )
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(language=LANGUAGES.get(lang, "French"))},
-        {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"},
-    ]
-
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=config.OPENROUTER_API_KEY, timeout=60)
     last_error: Exception | None = None
     for model in (config.OPENROUTER_MODEL, config.OPENROUTER_FALLBACK_MODEL):
         try:
             response = client.chat.completions.create(
-                model=model, messages=messages, max_tokens=max_tokens, temperature=0.3
+                model=model, messages=messages, max_tokens=max_tokens, temperature=temperature
             )
             answer = response.choices[0].message.content
             if answer:
@@ -71,3 +60,12 @@ def ask(question: str, lang: str, context: str, max_tokens: int = 700) -> dict:
         except OpenAIError as error:
             last_error = error
     raise RuntimeError(f"AI service unavailable: {last_error}")
+
+
+def ask(question: str, lang: str, context: str, max_tokens: int = 700) -> dict:
+    """Send the question + context to OpenRouter (single turn, grounded in CONTEXT)."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT.format(language=LANGUAGES.get(lang, "French"))},
+        {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"},
+    ]
+    return complete(messages, max_tokens)

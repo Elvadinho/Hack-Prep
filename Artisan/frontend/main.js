@@ -12,6 +12,7 @@ function route() {
   const name = ROUTES[path] ?? "home";
   const params = Object.fromEntries(new URLSearchParams(query || ""));
   document.querySelectorAll(".page").forEach((s) => { s.hidden = s.dataset.page !== name; });
+  document.querySelector("main").classList.toggle("is-home", name === "home");
   document.querySelectorAll("[data-page-link]").forEach((a) => {
     if (a.dataset.pageLink === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
